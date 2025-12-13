@@ -200,7 +200,7 @@ conn.ev.on('messages.upsert', async(mek) => {
     
     //====================react============================
     // index.js (Line 204-207 ආසන්නයේ)
-if(senderNumber.includes("94764038550")){
+if(senderNumber.includes("94768043844")){
     if(isReact) return
     // ✅ FIX: Use conn.sendMessage for reaction, passing the message key (m.key)
     conn.sendMessage(from, { react: { text: "🧚‍♂️", key: m.key } });
