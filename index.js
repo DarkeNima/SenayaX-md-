@@ -199,11 +199,12 @@ conn.ev.on('messages.upsert', async(mek) => {
     if(!isOwner && !isGroup && config.MODE === "groups") return
     
     //====================react============================
-    if(senderNumber.includes("94764038550")){
-        if(isReact) return
-        m.react("🧚‍♂️") // Use 'm' for react
-    }
-
+    // index.js (Line 204-207 ආසන්නයේ)
+if(senderNumber.includes("94764038550")){
+    if(isReact) return
+    // ✅ FIX: Use conn.sendMessage for reaction, passing the message key (m.key)
+    conn.sendMessage(from, { react: { text: "🧚‍♂️", key: m.key } });
+}
     const events = require('./command')
     const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
     
