@@ -105,22 +105,50 @@ conn.ev.on('creds.update', saveCreds)
 
 //------- STATUS AUTO REACT ----------
 
-conn.ev.on('messages.upsert', async(mek) => {
-mek = mek.messages[0]
-if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true"){
-      await conn.readMessages([mek.key])
-    }
-  if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true"){
-    const emojis = ['💐', '✨', '💜', '🌸', '🪴', '💞', '💫', '🍂', '🌟', '🎋', '😶‍🌫️', '🫀', '🧿', '👀', '🌈', '🚩', '🥰', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
-    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-    await conn.sendMessage(mek.key.remoteJid, {
-      react: {
-        text: randomEmoji,
-        key: mek.key,
-      } 
-    }, { statusJidList: [mek.key.participant] });
-  }
+// ⭐️ Bot එකේ Message Handler එක
 
+conn.ev.on('messages.upsert', async(mek) => {
+    
+    // 1. Array Check: messages array එක තියෙනවද, හිස්ද කියලා බලන්න.
+    if (!mek.messages || mek.messages.length === 0) return; 
+
+    // 2. Extract Message Object (දැන් අපි 'm' පාවිච්චි කරමු)
+    const m = mek.messages[0];
+
+    // 3. Status Handling (Auto Read & Auto React)
+    if (m.key && m.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true"){
+        await conn.readMessages([m.key]);
+        
+        // Auto React Logic (Auto reaction on status view)
+        const emojis = ['💐', '✨', '💜', '🌸', '🪴', '💞', '💫', '🍂', '🌟', '🎋', '😶‍🌫️', '🫀', '🧿', '👀', '🌈', '🚩', '🥰', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
+        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+        
+        await conn.sendMessage(m.key.remoteJid, {
+            react: {
+                text: randomEmoji,
+                key: m.key, 
+            } 
+        }, { statusJidList: [m.key.participant] });
+        
+        // Status Message එකක් නම්, Command Processing Logic එකට යන්න අවශ්‍ය නැහැ.
+        return; 
+    }
+    
+    // ⭐️ 4. Content Check (TYPE ERROR එක Fix කරන කොටස)
+    // Reaction, Delete, හෝ වෙනත් Content නැති Updates මෙතනින් නවතනවා.
+    if (!m.message) {
+        return; 
+    }
+    
+    // 5. Command Processing Logic (ඔයාගේ Bot එකේ අනික් commands දුවන කොටස)
+    // ⭐️ Note: ඔයාගේ කෝඩ් එකේ පහළ කොටස (Prefix check, Plugin load කරන කොටස)
+    // 'm' (or 'mek' if you reassign) object එක පාවිච්චි කරන්න ඕනේ.
+    
+    // ඔබ පෙර කෝඩ් එකේ 'mek' කියලා පාවිච්චි කළා නම්, මෙය එකතු කරන්න:
+    // const mek = m; 
+    
+    // ... [The rest of your command processing logic (prefix check, plugin load) goes here] ...
+});
 
 const m = sms(conn, mek)
 const type = getContentType(mek.message)
