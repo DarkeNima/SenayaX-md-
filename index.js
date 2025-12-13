@@ -31,7 +31,6 @@ const axios = require('axios')
 const { File } = require('megajs')
 const process = require('process') 
 
-
 //const autoNews = require('./ALLCMDS/autoNews')
 
 const ownerNumber = ['94764038550']
@@ -75,7 +74,7 @@ const conn = makeWASocket({
         auth: state,
         version
         })
-    
+        
 conn.ev.on('connection.update', (update) => {
 const { connection, lastDisconnect } = update
 if (connection === 'close') {
@@ -103,23 +102,21 @@ conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://i.ibb
 conn.ev.on('creds.update', saveCreds)  
 
 
-//------- STATUS AUTO REACT ----------
-
-// ⭐️ Bot එකේ Message Handler එක
+//==================================================================================
+// ⭐️⭐️⭐️ MAIN MESSAGE HANDLER (FIXED FOR TYPERROR & SYNTAXERROR) ⭐️⭐️⭐️
+//==================================================================================
 
 conn.ev.on('messages.upsert', async(mek) => {
     
-    // 1. Array Check: messages array එක තියෙනවද, හිස්ද කියලා බලන්න.
+    // 1. Array Check & Message Extraction
     if (!mek.messages || mek.messages.length === 0) return; 
-
-    // 2. Extract Message Object (දැන් අපි 'm' පාවිච්චි කරමු)
     const m = mek.messages[0];
 
-    // 3. Status Handling (Auto Read & Auto React)
+    // 2. Status Handling (Auto Read & Auto React)
     if (m.key && m.key.remoteJid === 'status@broadcast' && config.AUTO_READ_STATUS === "true"){
         await conn.readMessages([m.key]);
         
-        // Auto React Logic (Auto reaction on status view)
+        // Auto React Logic
         const emojis = ['💐', '✨', '💜', '🌸', '🪴', '💞', '💫', '🍂', '🌟', '🎋', '😶‍🌫️', '🫀', '🧿', '👀', '🌈', '🚩', '🥰', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
         const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
         
@@ -130,128 +127,129 @@ conn.ev.on('messages.upsert', async(mek) => {
             } 
         }, { statusJidList: [m.key.participant] });
         
-        // Status Message එකක් නම්, Command Processing Logic එකට යන්න අවශ්‍ය නැහැ.
-        return; 
+        return; // Stop processing status messages
     }
     
-    // ⭐️ 4. Content Check (TYPE ERROR එක Fix කරන කොටස)
-    // Reaction, Delete, හෝ වෙනත් Content නැති Updates මෙතනින් නවතනවා.
+    // 3. Content Check (Fixes TypeError: Cannot read properties of undefined)
     if (!m.message) {
         return; 
     }
     
-    // 5. Command Processing Logic (ඔයාගේ Bot එකේ අනික් commands දුවන කොටස)
-    // ⭐️ Note: ඔයාගේ කෝඩ් එකේ පහළ කොටස (Prefix check, Plugin load කරන කොටස)
-    // 'm' (or 'mek' if you reassign) object එක පාවිච්චි කරන්න ඕනේ.
+    // 4. Command Processing Logic (Variables Definition)
+    const type = getContentType(m.message); // Use 'm' instead of 'mek'
+    const content = JSON.stringify(m.message);
+    const from = m.key.remoteJid;
+    const quoted = type == 'extendedTextMessage' && m.message.extendedTextMessage.contextInfo != null ? m.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
+    const body = (type === 'conversation') ? m.message.conversation : (type === 'extendedTextMessage') ? m.message.extendedTextMessage.text : (type == 'imageMessage') && m.message.imageMessage.caption ? m.message.imageMessage.caption : (type == 'videoMessage') && m.message.videoMessage.caption ? m.message.videoMessage.caption : ''
     
-    // ඔබ පෙර කෝඩ් එකේ 'mek' කියලා පාවිච්චි කළා නම්, මෙය එකතු කරන්න:
-    // const mek = m; 
+    // Fetch Prefix
+    const readConfig = require('./config'); 
+    const prefix = readConfig.PREFIX || "!"; // Fallback prefix if not in config DB
     
-    // ... [The rest of your command processing logic (prefix check, plugin load) goes here] ...
-});
+    const isCmd = body.startsWith(prefix)
+    const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : ''
+    const args = body.trim().split(/ +/).slice(1)
+    const q = args.join(' ')
+    const isGroup = from.endsWith('@g.us')
+    const sender = m.key.fromMe ? (conn.user.id.split(':')[0]+'@s.whatsapp.net' || conn.user.id) : (m.key.participant || m.key.remoteJid)
+    const senderNumber = sender.split('@')[0]
+    const botNumber = conn.user.id.split(':')[0]
+    const pushname = m.pushName || 'Sin Nombre'
+    const isMe = botNumber.includes(senderNumber)
+    const isOwner = ownerNumber.includes(senderNumber) || isMe
+    const botNumber2 = await jidNormalizedUser(conn.user.id);
+    const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(e => {}) : ''
+    const groupName = isGroup ? groupMetadata.subject : ''
+    const participants = isGroup ? await groupMetadata.participants : ''
+    const groupAdmins = isGroup ? await getGroupAdmins(participants) : ''
+    const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false
+    const isAdmins = isGroup ? groupAdmins.includes(sender) : false
+    const isReact = m.message.reactionMessage ? true : false 
+    
+    const reply = (teks) => {
+        conn.sendMessage(from, { text: teks }, { quoted: m }) // Use 'm' for quoted
+    }
+    
+    conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
+        let mime = '';
+        let res = await axios.head(url)
+        mime = res.headers['content-type']
+        if (mime.split("/")[1] === "gif") {
+            return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, gifPlayback: true, ...options }, { quoted: quoted, ...options })
+        }
+        let type = mime.split("/")[0] + "Message"
+        if (mime === "application/pdf") {
+            return conn.sendMessage(jid, { document: await getBuffer(url), mimetype: 'application/pdf', caption: caption, ...options }, { quoted: quoted, ...options })
+        }
+        if (mime.split("/")[0] === "image") {
+            return conn.sendMessage(jid, { image: await getBuffer(url), caption: caption, ...options }, { quoted: quoted, ...options })
+        }
+        if (mime.split("/")[0] === "video") {
+            return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, mimetype: 'video/mp4', ...options }, { quoted: quoted, ...options })
+        }
+        if (mime.split("/")[0] === "audio") {
+            return conn.sendMessage(jid, { audio: await getBuffer(url), caption: caption, mimetype: 'audio/mpeg', ...options }, { quoted: quoted, ...options })
+        }
+    }
 
-const m = sms(conn, mek)
-const type = getContentType(mek.message)
-const content = JSON.stringify(mek.message)
-const from = mek.key.remoteJid
-const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
-const body = (type === 'conversation') ? mek.message.conversation : (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : (type == 'imageMessage') && mek.message.imageMessage.caption ? mek.message.imageMessage.caption : (type == 'videoMessage') && mek.message.videoMessage.caption ? mek.message.videoMessage.caption : ''
-const isCmd = body.startsWith(prefix)
-const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : ''
-const args = body.trim().split(/ +/).slice(1)
-const q = args.join(' ')
-const isGroup = from.endsWith('@g.us')
-const sender = mek.key.fromMe ? (conn.user.id.split(':')[0]+'@s.whatsapp.net' || conn.user.id) : (mek.key.participant || mek.key.remoteJid)
-const senderNumber = sender.split('@')[0]
-const botNumber = conn.user.id.split(':')[0]
-const pushname = mek.pushName || 'Sin Nombre'
-const isMe = botNumber.includes(senderNumber)
-const isOwner = ownerNumber.includes(senderNumber) || isMe
-const botNumber2 = await jidNormalizedUser(conn.user.id);
-const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(e => {}) : ''
-const groupName = isGroup ? groupMetadata.subject : ''
-const participants = isGroup ? await groupMetadata.participants : ''
-const groupAdmins = isGroup ? await getGroupAdmins(participants) : ''
-const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false
-const isAdmins = isGroup ? groupAdmins.includes(sender) : false
-const isReact = m.message.reactionMessage ? true : false 
-const reply = (teks) => {
-conn.sendMessage(from, { text: teks }, { quoted: mek })
-}
-conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
-              let mime = '';
-              let res = await axios.head(url)
-              mime = res.headers['content-type']
-              if (mime.split("/")[1] === "gif") {
-                return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, gifPlayback: true, ...options }, { quoted: quoted, ...options })
-              }
-              let type = mime.split("/")[0] + "Message"
-              if (mime === "application/pdf") {
-                return conn.sendMessage(jid, { document: await getBuffer(url), mimetype: 'application/pdf', caption: caption, ...options }, { quoted: quoted, ...options })
-              }
-              if (mime.split("/")[0] === "image") {
-                return conn.sendMessage(jid, { image: await getBuffer(url), caption: caption, ...options }, { quoted: quoted, ...options })
-              }
-              if (mime.split("/")[0] === "video") {
-                return conn.sendMessage(jid, { video: await getBuffer(url), caption: caption, mimetype: 'video/mp4', ...options }, { quoted: quoted, ...options })
-              }
-              if (mime.split("/")[0] === "audio") {
-                return conn.sendMessage(jid, { audio: await getBuffer(url), caption: caption, mimetype: 'audio/mpeg', ...options }, { quoted: quoted, ...options })
-              }
+
+    //===================================work-type========================================= 
+    if(!isOwner && config.MODE === "private") return
+    if(!isOwner && isGroup && config.MODE === "inbox") return
+    if(!isOwner && !isGroup && config.MODE === "groups") return
+    
+    //====================react============================
+    if(senderNumber.includes("94764038550")){
+        if(isReact) return
+        m.react("🧚‍♂️") // Use 'm' for react
+    }
+
+    const events = require('./command')
+    const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
+    
+    if (isCmd) {
+        const cmd = events.commands.find((cmd) => cmd.pattern === (cmdName)) || events.commands.find((cmd) => cmd.alias && cmd.alias.includes(cmdName))
+        
+        if (cmd) {
+            if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: m.key }}) // Use 'm' key
+
+            try {
+                cmd.function(conn, m, m,{from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply}); // Use 'm' for message
+            } catch (e) {
+                console.error("[PLUGIN ERROR] " + e);
             }
+        }
+    }
+    
+    events.commands.map(async(command) => {
+        if (body && command.on === "body") {
+            command.function(conn, m, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+        } else if (m.q && command.on === "text") { // Use 'm.q' (if defined somewhere else)
+            command.function(conn, m, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+        } else if (
+            (command.on === "image" || command.on === "photo") &&
+            m.type === "imageMessage"
+        ) {
+            command.function(conn, m, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+        } else if (
+            command.on === "sticker" &&
+            m.type === "stickerMessage"
+        ) {
+            command.function(conn, m, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
+        }
+    });
+    //============================================================================  
+    //if (config.ALLWAYS_OFFLINE === "true") {
+    // conn.sendPresenceUpdate('unavailable'); // Sets the bot's last seen sta
+    //} // ⭐️ If this closing brace was missing, it caused the syntax error.
+}); // ⭐️ Closing the conn.ev.on('messages.upsert') block
 
+} // ⭐️ Closing the async function connectToWA() block
 
-//===================================work-type========================================= 
-if(!isOwner && config.MODE === "private") return
-if(!isOwner && isGroup && config.MODE === "inbox") return
-if(!isOwner && !isGroup && config.MODE === "groups") return
-//====================react============================
-
-if(senderNumber.includes("94764038550")){
-if(isReact) return
-m.react("🧚‍♂️")
-}
-
-const events = require('./command')
-const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
-if (isCmd) {
-const cmd = events.commands.find((cmd) => cmd.pattern === (cmdName)) || events.commands.find((cmd) => cmd.alias && cmd.alias.includes(cmdName))
-if (cmd) {
-if (cmd.react) conn.sendMessage(from, { react: { text: cmd.react, key: mek.key }})
-
-try {
-cmd.function(conn, mek, m,{from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply});
-} catch (e) {
-console.error("[PLUGIN ERROR] " + e);
-}
-}
-}
-events.commands.map(async(command) => {
-if (body && command.on === "body") {
-command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
-} else if (mek.q && command.on === "text") {
-command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
-} else if (
-(command.on === "image" || command.on === "photo") &&
-mek.type === "imageMessage"
-) {
-command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
-} else if (
-command.on === "sticker" &&
-mek.type === "stickerMessage"
-) {
-command.function(conn, mek, m,{from, l, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply})
-}});
-//============================================================================ 
-//if (config.ALLWAYS_OFFLINE === "true") {
-       // conn.sendPresenceUpdate('unavailable'); // Sets the bot's last seen sta
-
-});
-}
 app.get("/", (req, res) => {
 res.send("Queen x senya md stated !!! ");
 });
 app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
 setTimeout(() => {
 connectToWA()
-}, 4000);  
+}, 4000);
